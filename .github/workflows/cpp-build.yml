@@ -1,0 +1,16 @@
+name: C++ Build Check
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure CMake
+      run: cmake -S . -B build
+
+    - name: Build
+      run: cmake --build build
