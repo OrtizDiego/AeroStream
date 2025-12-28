@@ -1,0 +1,10 @@
+# Prerequisites
+*.d
+*.o
+*.obj
+*.exe
+build/
+__pycache__/
+*.pyc
+.vscode/
+.DS_Store
