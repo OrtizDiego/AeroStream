@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 .vscode/
 .DS_Store
+venv/
+.venv
+.env
