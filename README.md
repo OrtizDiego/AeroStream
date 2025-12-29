@@ -34,3 +34,13 @@ Current performance shows a settling time of ~9 seconds with an overshoot of 1%.
    cmake ..
    cmake --build .
    ./flight_controller
+   ```
+
+### Quick Start
+To build the system, run all tests, and view the telemetry graph in one go, use the provided automation script:
+```bash
+./run_all.sh
+```
+
+> [!IMPORTANT]  
+> Make sure to install the python libraries `pandas` and `matplotlib` to be able to run the visualization script
