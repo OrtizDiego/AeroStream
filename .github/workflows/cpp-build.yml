@@ -1,9 +1,9 @@
-name: C++ Build Check
+name: C++ CI (Build & Test)
 
 on: [push, pull_request]
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,3 +14,6 @@ jobs:
 
     - name: Build
       run: cmake --build build
+
+    - name: Run Unit Tests
+      run: cd build && ctest --output-on-failure
