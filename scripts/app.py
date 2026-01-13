@@ -29,7 +29,6 @@ if submitted:
     exe_name = "./flight_controller" 
     
     try:
-        # Pass 'steps' as the 4th argument
         subprocess.run([exe_name, str(kp), str(ki), str(kd), str(steps)], cwd=build_dir, check=True)
     except Exception as e:
         st.error(f"Error: {e}")
@@ -63,10 +62,16 @@ if submitted:
         mode='lines', line=dict(color='red', dash='dash'), name='Target'
     ), row=1, col=1)
 
-    # Drone Emoji (Left - Initial)
+    # --- UPDATED DRONE TRACE (HUD) ---
+    # We use HTML <br> to put the text below the emoji
+    initial_alt = df['Actual'][0]
     fig.add_trace(go.Scatter(
-        x=[0], y=[df['Actual'][0]], 
-        mode='text', text=['🚁'], textfont=dict(size=40), name='Drone'
+        x=[0], y=[initial_alt], 
+        mode='text', 
+        text=[f"🚁<br><b>{initial_alt:.1f} m</b>"], # <--- NEW HUD FORMAT
+        textposition="bottom center",               # <--- Puts text under the emoji
+        textfont=dict(size=18, color="black"),      # <--- Make text readable
+        name='Drone'
     ), row=1, col=1)
 
     # Ghost Path (Right - Full History)
@@ -89,9 +94,15 @@ if submitted:
         
         frames.append(go.Frame(
             data=[
-                # Update Drone (Trace 1)
-                go.Scatter(x=[0], y=[row['Actual']], mode='text', text=['🚁'], textfont=dict(size=40)),
-                # Update Live Line (Trace 3)
+                # Update Drone Position AND Text
+                go.Scatter(
+                    x=[0], y=[row['Actual']],
+                    mode='text',
+                    text=[f"🚁<br><b>{row['Actual']:.1f} m</b>"], # <--- Updates dynamic altitude
+                    textposition="bottom center",
+                    textfont=dict(size=18, color="black")
+                ),
+                # Update Live Line
                 go.Scatter(x=current_data['Time'], y=current_data['Actual'])
             ],
             traces=[1, 3],
@@ -100,7 +111,7 @@ if submitted:
 
     fig.frames = frames
 
-    # 3. LAYOUT & PLAY BUTTON
+    # 3. LAYOUT
     fig.update_layout(
         height=500,
         hovermode="x unified",
@@ -126,9 +137,4 @@ if submitted:
     # --- D. DOWNLOAD BUTTON ---
     st.divider()
     csv_data = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Telemetry CSV",
-        data=csv_data,
-        file_name="flight_data.csv",
-        mime="text/csv",
-    )
+    st.download_button("📥 Download Telemetry CSV", csv_data, "flight_data.csv", "text/csv")
