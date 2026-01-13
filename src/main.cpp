@@ -1,26 +1,26 @@
 #include <iostream>
 #include <fstream>
-#include <thread>
-#include <chrono>
 #include <string> // Required for std::stod
 #include "PID.hpp"
 #include "MockSensor.hpp"
 
 int main(int argc, char *argv[])
 {
-    // 1. Default Defaults
+    // 1. Defaults
     double Kp = 0.6;
     double Ki = 0.01;
     double Kd = 0.05;
+    int steps = 200; // Default steps
 
-    // 2. Override if arguments are provided
-    if (argc == 4)
+    // 2. Parse Arguments (Expect 4 args now: Kp, Ki, Kd, Steps)
+    if (argc >= 5)
     {
         try
         {
             Kp = std::stod(argv[1]);
             Ki = std::stod(argv[2]);
             Kd = std::stod(argv[3]);
+            steps = std::stoi(argv[4]); // Parse integer steps
         }
         catch (...)
         {
@@ -28,19 +28,13 @@ int main(int argc, char *argv[])
         }
     }
 
-    // 3. DEBUG PRINT: Verify we received the values
-    std::cout << "---------------------------------------" << std::endl;
-    std::cout << "[SYSTEM STARTUP] Configuring Flight Controller..." << std::endl;
-    std::cout << "   Kp: " << Kp << " | Ki: " << Ki << " | Kd: " << Kd << std::endl;
-    std::cout << "---------------------------------------" << std::endl;
+    std::cout << "[SYSTEM STARTUP] Simulating " << steps << " steps..." << std::endl;
 
-    // 4. Setup Simulation
+    // 3. Setup
     std::ofstream logFile("telemetry.csv");
     logFile << "Time,Target,Actual,Output\n";
 
     double dt = 0.1;
-
-    // CRITICAL: Ensure we pass the variables Kp, Ki, Kd here!
     PID pid(Kp, Ki, Kd, dt, 100.0, -100.0);
 
     MockSensor altimeter(0.0);
@@ -48,8 +42,8 @@ int main(int argc, char *argv[])
 
     double target_altitude = 100.0;
 
-    // 5. Run Loop
-    for (int i = 0; i < 2000; i++)
+    // 4. Run Loop using 'steps' variable
+    for (int i = 0; i < steps; i++)
     {
         double current_alt = altimeter.readValue();
         double motor_power = pid.calculate(target_altitude, current_alt);
@@ -57,9 +51,6 @@ int main(int argc, char *argv[])
 
         // 2. Write data to CSV
         logFile << i * dt << "," << target_altitude << "," << current_alt << "," << motor_power << "\n";
-
-        // Removed sleep for performance when called from Python
-        // std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     logFile.close();
