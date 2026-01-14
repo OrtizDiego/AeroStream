@@ -8,7 +8,7 @@ import numpy as np
 
 # 1. PAGE CONFIG
 st.set_page_config(page_title="AeroStream GCS", layout="wide", page_icon="🚁")
-st.title("🚁 AeroStream: Intelligent Flight Control System")
+st.title("🚁 AeroStream: Intelligent PID Control System")
 
 # --- PHYSICS METRICS ENGINE ---
 def calculate_metrics(df, target, tolerance_percent=0.02):
@@ -233,7 +233,7 @@ if submitted:
         height=500, hovermode="x unified", template="plotly_white",
         yaxis=dict(range=[-20, y_max], title="Altitude (m)"), xaxis=dict(visible=False, range=[-1, 1]),
         yaxis2=dict(range=[-20, y_max]), xaxis2=dict(title="Time (s)"),
-        updatemenus=[{"type": "buttons", "showactive": False, "x": 1.05, "y": 0, 
+        updatemenus=[{"type": "buttons", "showactive": True, "x": 1.05, "y": -0.1, 
                       "buttons": [{"label": "▶ Play Flight", "method": "animate", "args": [None, {"frame": {"duration": 20, "redraw": True}, "fromcurrent": True}]}]}]
     )
 
