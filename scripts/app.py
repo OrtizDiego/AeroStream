@@ -148,7 +148,7 @@ def run_optimization(strategy):
     bar.empty()
 
 # 2. SIDEBAR CONFIG
-st.sidebar.header("🕹️ Mission Control", help="Press 'Run Mission' to calculate the flight and then 'Play' to view the resulting telemetry data.")
+st.sidebar.header("🕹️ Mission Control", help="Press 'Run Mission' to calculate the flight and then 'Play' to view the resulting telemetry data. Use the 'AI Auto-Tuner' to optimize the PID parameters to the flight mission.")
 
 if 'kp' not in st.session_state: st.session_state['kp'] = 0.6
 if 'ki' not in st.session_state: st.session_state['ki'] = 0.01
