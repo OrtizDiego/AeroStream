@@ -37,13 +37,12 @@ def calculate_metrics(df, target, tolerance_percent=0.02):
     return rmse, overshoot_percent, settling_time
 
 # --- HELPER: Run Simulation ---
-def run_simulation_headless(kp, ki, kd, steps, target_alt):
+def run_simulation_headless(kp, ki, kd, steps, target_alt, mode='balanced'):
     build_dir = "../build"
     exe_name = "./flight_controller"
     csv_path = os.path.join(build_dir, "telemetry.csv")
     
     try:
-        # PASS TARGET ALTITUDE AS 5TH ARGUMENT
         subprocess.run(
             [exe_name, str(kp), str(ki), str(kd), str(steps), str(target_alt)], 
             cwd=build_dir, check=True, stdout=subprocess.DEVNULL
@@ -56,19 +55,28 @@ def run_simulation_headless(kp, ki, kd, steps, target_alt):
     df = pd.read_csv(csv_path)
     rmse, _, settling_time = calculate_metrics(df, target=target_alt)
     
-    if settling_time == float('inf'):
-        time_penalty = 100.0
+    # --- COST FUNCTION SWITCH ---
+    if mode == 'accuracy':
+        # Strategy A: Only care about being close to the line (RMSE)
+        # This might result in very slow, "lazy" convergence
+        return rmse
     else:
-        time_penalty = settling_time * 0.5 
-
-    total_cost = rmse + time_penalty
-    return total_cost
+        # Strategy B: Balanced (RMSE + Speed)
+        # Penalize slow settling times heavily
+        if settling_time == float('inf'):
+            time_penalty = 100.0
+        else:
+            time_penalty = settling_time * 0.5 
+        return rmse + time_penalty
 
 # --- OPTIMIZATION ALGO ---
-def optimize_pid(progress_bar, target_alt, steps):
+def optimize_pid(progress_bar, target_alt, steps, mode='balanced'):
     p = [0.5, 0.0, 0.0] 
     dp = [0.1, 0.01, 0.01] 
-    best_err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt)
+    
+    # Initial run
+    best_err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt, mode)
+    
     threshold = 0.005
     iteration = 0
     max_iter = 30 
@@ -78,7 +86,7 @@ def optimize_pid(progress_bar, target_alt, steps):
             p[i] += dp[i]
             if p[i] < 0: p[i] = 0 
             
-            err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt)
+            err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt, mode)
             
             if err < best_err:
                 best_err = err
@@ -86,7 +94,7 @@ def optimize_pid(progress_bar, target_alt, steps):
             else:
                 p[i] -= 2 * dp[i]
                 if p[i] < 0: p[i] = 0
-                err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt)
+                err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt, mode)
                 
                 if err < best_err:
                     best_err = err
@@ -103,23 +111,28 @@ def optimize_pid(progress_bar, target_alt, steps):
 def clamp(n, minn, maxn):
     return max(min(maxn, n), minn)
 
-def run_optimization_callback():
+# --- CALLBACKS ---
+def run_accuracy_opt():
+    _run_optimization(mode='accuracy', label="Accuracy")
+
+def run_balanced_opt():
+    _run_optimization(mode='balanced', label="Balanced")
+
+def _run_optimization(mode, label):
     status = st.sidebar.empty()
-    status.write("Running Physics Optimization...")
+    status.write(f"Optimizing for {label}...")
     bar = st.sidebar.progress(0)
     
-    # Pass current target and steps to optimizer
-    # We access the slider values via session state or default
     tgt = st.session_state.get('target', 100.0)
     stp = st.session_state.get('steps', 1000)
 
-    best_p, min_err = optimize_pid(bar, tgt, stp)
+    best_p, min_err = optimize_pid(bar, tgt, stp, mode=mode)
     
     st.session_state['kp'] = clamp(best_p[0], 0.0, 5.0)
     st.session_state['ki'] = clamp(best_p[1], 0.0, 1.0)
     st.session_state['kd'] = clamp(best_p[2], 0.0, 1.0)
     
-    status.success(f"Optimized! Cost: {min_err:.2f}")
+    status.success(f"{label} Optimized! Cost: {min_err:.2f}")
     bar.empty()
 
 # 2. SIDEBAR CONFIG
@@ -133,7 +146,7 @@ if 'target' not in st.session_state: st.session_state['target'] = 100.0
 with st.sidebar.form("pid_form"):
     st.subheader("Flight Parameters")
     target_alt = st.slider("Target Altitude (m)", 10.0, 300.0, key='target', step=10.0)
-    steps = st.slider("Simulation Steps", 50, 2000, 500, 50, key='steps')
+    steps = st.slider("Simulation Steps", 50, 2000, 1000, 50, key='steps')
 
     st.subheader("PID Gains")
     kp = st.slider("Proportional (Kp)", 0.0, 5.0, key='kp', step=0.01)
@@ -144,14 +157,18 @@ with st.sidebar.form("pid_form"):
 
 st.sidebar.divider()
 st.sidebar.subheader("🤖 AI Auto-Tuner")
-st.sidebar.button("✨ Find Optimal Gains", on_click=run_optimization_callback)
+
+col_a, col_b = st.sidebar.columns(2)
+with col_a:
+    st.button("🎯 Accuracy Only", on_click=run_accuracy_opt, help="Minimizes Error (RMSE). Ignores time.")
+with col_b:
+    st.button("⚡ Accuracy + Speed", on_click=run_balanced_opt, help="Minimizes Error AND Settling Time.")
 
 # 3. MAIN LOGIC
 if submitted:
     build_dir = "../build"
     exe_name = "./flight_controller" 
     try:
-        # Pass ALL 5 arguments now
         subprocess.run([exe_name, str(kp), str(ki), str(kd), str(steps), str(target_alt)], cwd=build_dir, check=True)
     except Exception as e:
         st.error(f"Error: {e}")
@@ -164,7 +181,6 @@ if submitted:
         
     df = pd.read_csv(csv_path)
 
-    # Calculate Metrics using dynamic target
     rmse, overshoot, settling_time = calculate_metrics(df, target=target_alt)
 
     col1, col2, col3, col4 = st.columns(4)
@@ -173,7 +189,6 @@ if submitted:
     col3.metric("RMSE Error", f"{rmse:.2f}", delta_color="inverse")
     col4.metric("Target", f"{target_alt} m")
 
-    # Dynamic Y-Axis Range
     y_max = max(target_alt * 1.2, df['Actual'].max() + 10)
     
     fig = make_subplots(
@@ -183,7 +198,6 @@ if submitted:
         specs=[[{"type": "xy"}, {"type": "xy"}]]
     )
 
-    # Static Traces
     fig.add_trace(go.Scatter(x=[-0.5, 0.5], y=[df['Target'][0], df['Target'][0]], mode='lines', line=dict(color='red', dash='dash'), name='Target'), row=1, col=1)
     
     initial_alt = df['Actual'][0]
@@ -196,11 +210,9 @@ if submitted:
     fig.add_trace(go.Scatter(x=df['Time'], y=df['Actual'], mode='lines', line=dict(color='lightgrey'), showlegend=False), row=1, col=2)
     fig.add_trace(go.Scatter(x=[df['Time'][0]], y=[df['Actual'][0]], mode='lines', line=dict(color='blue', width=2), name='Response'), row=1, col=2)
 
-    # Settling Time Marker
     if settling_time != float('inf') and settling_time > 0:
         fig.add_vline(x=settling_time, line_width=1, line_dash="dash", line_color="green", annotation_text="Settled")
 
-    # Frames
     total_rows = len(df)
     max_frames = 100 
     step = max(1, total_rows // max_frames)
