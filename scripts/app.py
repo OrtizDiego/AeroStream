@@ -11,13 +11,7 @@ st.set_page_config(page_title="AeroStream GCS", layout="wide", page_icon="🚁")
 st.title("🚁 AeroStream: Intelligent Flight Control System")
 
 # --- PHYSICS METRICS ENGINE ---
-def calculate_metrics(df, target=100.0, tolerance_percent=0.02):
-    """
-    Calculates key control theory metrics:
-    1. Settling Time: Time to enter and stay within 2% of target.
-    2. Max Overshoot: Max peak above target.
-    3. RMSE: Root Mean Squared Error (Overall accuracy).
-    """
+def calculate_metrics(df, target, tolerance_percent=0.02):
     # 1. RMSE (Accuracy)
     error_series = df['Target'] - df['Actual']
     rmse = np.sqrt((error_series ** 2).mean())
@@ -25,37 +19,33 @@ def calculate_metrics(df, target=100.0, tolerance_percent=0.02):
     # 2. Max Overshoot (Stability)
     max_alt = df['Actual'].max()
     overshoot = max(0, max_alt - target)
-    overshoot_percent = (overshoot / target) * 100
+    overshoot_percent = (overshoot / target) * 100 if target != 0 else 0
 
     # 3. Settling Time (Speed)
-    # Define the "Stability Band" (e.g., 98m to 102m)
     upper_bound = target * (1 + tolerance_percent)
     lower_bound = target * (1 - tolerance_percent)
 
-    # Find time points where we are OUTSIDE the band
     out_of_band = df[(df['Actual'] > upper_bound) | (df['Actual'] < lower_bound)]
     
     if out_of_band.empty:
-        settling_time = 0.0 # Perfectly stable from start (unlikely)
+        settling_time = 0.0 
     else:
-        # The settling time is the timestamp of the LAST point we were outside the band
         settling_time = out_of_band['Time'].iloc[-1]
-        
-        # If the last point of the simulation is still out of band, we never settled
         if settling_time == df['Time'].iloc[-1]:
             settling_time = float('inf') 
 
     return rmse, overshoot_percent, settling_time
 
-# --- HELPER: Run Simulation & Get Composite Cost ---
-def run_simulation_headless(kp, ki, kd, steps=500):
+# --- HELPER: Run Simulation ---
+def run_simulation_headless(kp, ki, kd, steps, target_alt):
     build_dir = "../build"
     exe_name = "./flight_controller"
     csv_path = os.path.join(build_dir, "telemetry.csv")
     
     try:
+        # PASS TARGET ALTITUDE AS 5TH ARGUMENT
         subprocess.run(
-            [exe_name, str(kp), str(ki), str(kd), str(steps)], 
+            [exe_name, str(kp), str(ki), str(kd), str(steps), str(target_alt)], 
             cwd=build_dir, check=True, stdout=subprocess.DEVNULL
         )
     except subprocess.CalledProcessError:
@@ -64,26 +54,21 @@ def run_simulation_headless(kp, ki, kd, steps=500):
     if not os.path.exists(csv_path): return float('inf')
     
     df = pd.read_csv(csv_path)
+    rmse, _, settling_time = calculate_metrics(df, target=target_alt)
     
-    # Calculate Metrics
-    rmse, _, settling_time = calculate_metrics(df, target=100.0)
-    
-    # --- THE MAGIC FORMULA ---
-    # Cost = Accuracy (RMSE) + Speed (Settling Time)
-    # We penalize settling time heavily (0.5 cost per second) to force faster stabilization
     if settling_time == float('inf'):
-        time_penalty = 100.0 # Huge penalty if it never stabilizes
+        time_penalty = 100.0
     else:
         time_penalty = settling_time * 0.5 
 
     total_cost = rmse + time_penalty
     return total_cost
 
-# --- ALGORITHM: Twiddle (Coordinate Descent) ---
-def optimize_pid(progress_bar):
+# --- OPTIMIZATION ALGO ---
+def optimize_pid(progress_bar, target_alt, steps):
     p = [0.5, 0.0, 0.0] 
     dp = [0.1, 0.01, 0.01] 
-    best_err = run_simulation_headless(p[0], p[1], p[2])
+    best_err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt)
     threshold = 0.005
     iteration = 0
     max_iter = 30 
@@ -91,9 +76,9 @@ def optimize_pid(progress_bar):
     while sum(dp) > threshold and iteration < max_iter:
         for i in range(len(p)):
             p[i] += dp[i]
-            if p[i] < 0: p[i] = 0 # Constraint
+            if p[i] < 0: p[i] = 0 
             
-            err = run_simulation_headless(p[0], p[1], p[2])
+            err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt)
             
             if err < best_err:
                 best_err = err
@@ -101,7 +86,7 @@ def optimize_pid(progress_bar):
             else:
                 p[i] -= 2 * dp[i]
                 if p[i] < 0: p[i] = 0
-                err = run_simulation_headless(p[0], p[1], p[2])
+                err = run_simulation_headless(p[0], p[1], p[2], steps, target_alt)
                 
                 if err < best_err:
                     best_err = err
@@ -123,7 +108,12 @@ def run_optimization_callback():
     status.write("Running Physics Optimization...")
     bar = st.sidebar.progress(0)
     
-    best_p, min_err = optimize_pid(bar)
+    # Pass current target and steps to optimizer
+    # We access the slider values via session state or default
+    tgt = st.session_state.get('target', 100.0)
+    stp = st.session_state.get('steps', 1000)
+
+    best_p, min_err = optimize_pid(bar, tgt, stp)
     
     st.session_state['kp'] = clamp(best_p[0], 0.0, 5.0)
     st.session_state['ki'] = clamp(best_p[1], 0.0, 1.0)
@@ -138,30 +128,31 @@ st.sidebar.header("🕹️ Simulation Settings")
 if 'kp' not in st.session_state: st.session_state['kp'] = 0.6
 if 'ki' not in st.session_state: st.session_state['ki'] = 0.01
 if 'kd' not in st.session_state: st.session_state['kd'] = 0.05
+if 'target' not in st.session_state: st.session_state['target'] = 100.0
 
 with st.sidebar.form("pid_form"):
-    st.subheader("Manual Tuning")
+    st.subheader("Flight Parameters")
+    target_alt = st.slider("Target Altitude (m)", 10.0, 300.0, key='target', step=10.0)
+    steps = st.slider("Simulation Steps", 50, 2000, 500, 50, key='steps')
+
+    st.subheader("PID Gains")
     kp = st.slider("Proportional (Kp)", 0.0, 5.0, key='kp', step=0.01)
     ki = st.slider("Integral (Ki)", 0.0, 1.0, key='ki', step=0.001)
     kd = st.slider("Derivative (Kd)", 0.0, 1.0, key='kd', step=0.01)
-    
-    st.subheader("Duration")
-    steps = st.slider("Simulation Steps", 50, 2000, 500, 50)
     
     submitted = st.form_submit_button("🚀 Run Simulation")
 
 st.sidebar.divider()
 st.sidebar.subheader("🤖 AI Auto-Tuner")
 st.sidebar.button("✨ Find Optimal Gains", on_click=run_optimization_callback)
-st.sidebar.info("Optimizes for accuracy and settling time.")
 
 # 3. MAIN LOGIC
 if submitted:
-    # --- A. RUN SIMULATION ---
     build_dir = "../build"
     exe_name = "./flight_controller" 
     try:
-        subprocess.run([exe_name, str(kp), str(ki), str(kd), str(steps)], cwd=build_dir, check=True)
+        # Pass ALL 5 arguments now
+        subprocess.run([exe_name, str(kp), str(ki), str(kd), str(steps), str(target_alt)], cwd=build_dir, check=True)
     except Exception as e:
         st.error(f"Error: {e}")
         st.stop()
@@ -173,20 +164,17 @@ if submitted:
         
     df = pd.read_csv(csv_path)
 
-    # --- B. CALCULATE FLIGHT METRICS ---
-    rmse, overshoot, settling_time = calculate_metrics(df, target=100.0)
+    # Calculate Metrics using dynamic target
+    rmse, overshoot, settling_time = calculate_metrics(df, target=target_alt)
 
-    # --- C. DISPLAY METRICS (The "How do I know" part) ---
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Settling Time (2%)", f"{settling_time:.2f} s", delta_color="inverse")
+    col1.metric("Settling Time", f"{settling_time:.2f} s", delta_color="inverse")
     col2.metric("Overshoot", f"{overshoot:.1f} %", delta_color="inverse")
     col3.metric("RMSE Error", f"{rmse:.2f}", delta_color="inverse")
-    col4.metric("Current Kp", f"{kp:.2f}")
+    col4.metric("Target", f"{target_alt} m")
 
-    # --- D. BUILD ANIMATION ---
-    total_rows = len(df)
-    max_frames = 100 
-    step = max(1, total_rows // max_frames)
+    # Dynamic Y-Axis Range
+    y_max = max(target_alt * 1.2, df['Actual'].max() + 10)
     
     fig = make_subplots(
         rows=1, cols=2, 
@@ -208,11 +196,14 @@ if submitted:
     fig.add_trace(go.Scatter(x=df['Time'], y=df['Actual'], mode='lines', line=dict(color='lightgrey'), showlegend=False), row=1, col=2)
     fig.add_trace(go.Scatter(x=[df['Time'][0]], y=[df['Actual'][0]], mode='lines', line=dict(color='blue', width=2), name='Response'), row=1, col=2)
 
-    # Add Settling Time Marker (Green Line)
+    # Settling Time Marker
     if settling_time != float('inf') and settling_time > 0:
         fig.add_vline(x=settling_time, line_width=1, line_dash="dash", line_color="green", annotation_text="Settled")
 
     # Frames
+    total_rows = len(df)
+    max_frames = 100 
+    step = max(1, total_rows // max_frames)
     frames = []
     for i in range(0, total_rows, step):
         row = df.iloc[i]
@@ -228,14 +219,13 @@ if submitted:
 
     fig.update_layout(
         height=500, hovermode="x unified", template="plotly_white",
-        yaxis=dict(range=[-20, 150], title="Altitude (m)"), xaxis=dict(visible=False, range=[-1, 1]),
-        yaxis2=dict(range=[-20, 150]), xaxis2=dict(title="Time (s)"),
+        yaxis=dict(range=[-20, y_max], title="Altitude (m)"), xaxis=dict(visible=False, range=[-1, 1]),
+        yaxis2=dict(range=[-20, y_max]), xaxis2=dict(title="Time (s)"),
         updatemenus=[{"type": "buttons", "showactive": False, "x": 1.05, "y": 0, 
                       "buttons": [{"label": "▶ Play Flight", "method": "animate", "args": [None, {"frame": {"duration": 20, "redraw": True}, "fromcurrent": True}]}]}]
     )
 
     st.plotly_chart(fig, use_container_width=True)
-    
     st.divider()
     csv_data = df.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download Telemetry CSV", csv_data, "flight_data.csv", "text/csv")
