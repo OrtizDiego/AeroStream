@@ -5,7 +5,9 @@
 ![C++](https://img.shields.io/badge/C++-17-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)
 
-A professional-grade **Flight Control System (FCS)** simulation. This project implements a high-performance C++ PID controller wrapped in a **Streamlit Ground Control Station (GCS)** for real-time telemetry analysis, hardware-in-the-loop (HIL) simulation, and AI-driven parameter optimization.
+A **Flight Control System (FCS)** simulation. This project implements a high-performance C++ PID controller wrapped in a **Streamlit Ground Control Station (GCS)** for real-time telemetry analysis, hardware-in-the-loop (HIL) simulation, and AI-driven parameter optimization.
+
+![alt text](assets/simulation.png?raw=true "Simulation")
 
 ---
 
