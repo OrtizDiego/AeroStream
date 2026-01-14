@@ -190,6 +190,43 @@ col_a, col_b = st.sidebar.columns(2)
 with col_a: st.button("🎯 Accuracy", on_click=lambda: run_optimization("accuracy"), help="Minimizes Error only.")
 with col_b: st.button("⚡ Balanced", on_click=lambda: run_optimization("balanced"), help="Minimizes Error + Time.")
 
+# --- SPLASH SCREEN LOGIC ---
+if not submitted:
+    st.markdown("""
+        <style>
+        @keyframes bigHover {
+            0% { transform: translateY(0px) rotate(0deg); }
+            25% { transform: translateY(-20px) rotate(-5deg); }
+            50% { transform: translateY(0px) rotate(0deg); }
+            75% { transform: translateY(-20px) rotate(5deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+        .splash-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 60vh; /* Occupy 60% of screen height */
+            opacity: 0.4; /* Faded "Background" look */
+        }
+        .giant-drone {
+            font-size: 15rem; /* Massive Emoji */
+            animation: bigHover 4s ease-in-out infinite;
+        }
+        .splash-text {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #888;
+            margin-top: 20px;
+        }
+        </style>
+        <div class="splash-container">
+            <div class="giant-drone">🚁</div>
+            <div class="splash-text">SYSTEM STANDBY</div>
+            <div>Configure parameters and click "Run Mission"</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 # 3. MAIN LOGIC
 if submitted:
     build_dir = "../build"
