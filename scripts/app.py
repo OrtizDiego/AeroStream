@@ -146,7 +146,7 @@ with st.sidebar.form("pid_form"):
     kd = st.slider("Derivative (Kd)", 0.0, 1.0, key='kd', step=0.01)
     
     st.subheader("Duration")
-    steps = st.slider("Simulation Steps", 100, 2000, 500, 50)
+    steps = st.slider("Simulation Steps", 50, 2000, 500, 50)
     
     submitted = st.form_submit_button("🚀 Run Simulation")
 
