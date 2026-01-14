@@ -5,6 +5,38 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
 import numpy as np
+import subprocess
+import sys
+
+# --- AUTO-COMPILE C++ ON CLOUD ---
+def ensure_cpp_executable():
+    # Define paths based on where app.py is located
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+    build_dir = os.path.join(root_dir, "build")
+    exe_path = os.path.join(build_dir, "flight_controller")
+
+    # Check if executable exists; if not, compile it
+    if not os.path.exists(exe_path):
+        print("⚠️ C++ Binary not found. Compiling...")
+        
+        # Create build directory if needed
+        os.makedirs(build_dir, exist_ok=True)
+        
+        try:
+            # 1. Run CMake configuration
+            # We assume CMakeLists.txt is in the root_dir
+            subprocess.run(["cmake", ".."], cwd=build_dir, check=True)
+            
+            # 2. Compile
+            subprocess.run(["cmake", "--build", "."], cwd=build_dir, check=True)
+            
+            print("✅ Compilation Successful!")
+        except Exception as e:
+            print(f"❌ Compilation Failed: {e}")
+            # We don't stop the app, but simulation won't work
+            
+ensure_cpp_executable()
 
 # 1. PAGE CONFIG
 st.set_page_config(page_title="AeroStream GCS", layout="wide", page_icon="🚁")
