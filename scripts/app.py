@@ -8,34 +8,28 @@ import numpy as np
 import subprocess
 import sys
 
-# --- AUTO-COMPILE C++ ON CLOUD ---
-def ensure_cpp_executable():
-    # Define paths based on where app.py is located
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.abspath(os.path.join(current_dir, ".."))
-    build_dir = os.path.join(root_dir, "build")
-    exe_path = os.path.join(build_dir, "flight_controller")
+# --- 1. ROBUST PATH CONFIGURATION ---
+# We calculate absolute paths so this works on Local, Docker, and Cloud
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__)) 
+ROOT_DIR = os.path.abspath(os.path.join(SCRIPTS_DIR, ".."))
+BUILD_DIR = os.path.join(ROOT_DIR, "build")
+EXE_PATH = os.path.join(BUILD_DIR, "flight_controller")
+CSV_PATH = os.path.join(BUILD_DIR, "telemetry.csv")
 
-    # Check if executable exists; if not, compile it
-    if not os.path.exists(exe_path):
+# --- 2. AUTO-COMPILE C++ (CLOUD SUPPORT) ---
+def ensure_cpp_executable():
+    if not os.path.exists(EXE_PATH):
         print("⚠️ C++ Binary not found. Compiling...")
-        
-        # Create build directory if needed
-        os.makedirs(build_dir, exist_ok=True)
-        
+        os.makedirs(BUILD_DIR, exist_ok=True)
         try:
-            # 1. Run CMake configuration
-            # We assume CMakeLists.txt is in the root_dir
-            subprocess.run(["cmake", ".."], cwd=build_dir, check=True)
-            
-            # 2. Compile
-            subprocess.run(["cmake", "--build", "."], cwd=build_dir, check=True)
-            
+            # Configure and Build
+            subprocess.run(["cmake", ".."], cwd=BUILD_DIR, check=True)
+            subprocess.run(["cmake", "--build", "."], cwd=BUILD_DIR, check=True)
             print("✅ Compilation Successful!")
         except Exception as e:
-            print(f"❌ Compilation Failed: {e}")
-            # We don't stop the app, but simulation won't work
-            
+            st.error(f"❌ Compilation Failed: {e}")
+
+# Run compilation check on startup
 ensure_cpp_executable()
 
 # 1. PAGE CONFIG
@@ -86,22 +80,19 @@ def calculate_metrics(df, switch_step, mode_type, tolerance_percent=0.02):
     return rmse, overshoot_percent, settling_time
 
 # --- HELPER: Run Simulation ---
-def run_simulation_headless(kp, ki, kd, steps, t1, t2, switch, mission_mode, opt_strategy):
-    build_dir = "../build"
-    exe_name = "./flight_controller"
-    csv_path = os.path.join(build_dir, "telemetry.csv")
-    
+def run_simulation_headless(kp, ki, kd, steps, t1, t2, switch, mission_mode, opt_strategy):    
     try:
+        # Use the absolute EXE_PATH we defined at the top
         subprocess.run(
-            [exe_name, str(kp), str(ki), str(kd), str(steps), str(t1), str(t2), str(switch)], 
-            cwd=build_dir, check=True, stdout=subprocess.DEVNULL
+            [EXE_PATH, str(kp), str(ki), str(kd), str(steps), str(t1), str(t2), str(switch)], 
+            cwd=BUILD_DIR, check=True, stdout=subprocess.DEVNULL
         )
-    except subprocess.CalledProcessError:
+    except Exception as e:
         return float('inf')
 
-    if not os.path.exists(csv_path): return float('inf')
+    if not os.path.exists(CSV_PATH): return float('inf')
     
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(CSV_PATH)
     rmse, _, settling_time = calculate_metrics(df, switch, mission_mode)
     
     if opt_strategy == "accuracy":
@@ -260,22 +251,21 @@ if not submitted:
     """, unsafe_allow_html=True)
 
 # 3. MAIN LOGIC
-if submitted:
-    build_dir = "../build"
-    exe_name = "./flight_controller"
-    
+if submitted:    
     try:
-        subprocess.run([exe_name, str(kp), str(ki), str(kd), str(steps), str(t1_val), str(t2_val), str(switch_val)], cwd=build_dir, check=True)
+        subprocess.run(
+            [EXE_PATH, str(kp), str(ki), str(kd), str(steps), str(t1_val), str(t2_val), str(switch_val)], 
+            cwd=BUILD_DIR, check=True
+        )
     except Exception as e:
         st.error(f"Error: {e}")
         st.stop()
 
-    csv_path = os.path.join(build_dir, "telemetry.csv")
-    if not os.path.exists(csv_path):
+    if not os.path.exists(CSV_PATH):
         st.error("Telemetry file missing.")
         st.stop()
         
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(CSV_PATH)
     rmse, overshoot, settling_time = calculate_metrics(df, switch_val, mission_mode)
 
     col1, col2, col3 = st.columns(3)
