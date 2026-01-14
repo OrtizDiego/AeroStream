@@ -1,5 +1,7 @@
 # 🚁 AeroStream: Intelligent Flight Control System
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://aerostream.streamlit.app/)
+
 ![CI/CD Status](https://github.com/OrtizDiego/AeroStream/actions/workflows/cpp-build.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![C++](https://img.shields.io/badge/C++-17-blue.svg)
