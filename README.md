@@ -69,7 +69,7 @@ Navigate to the scripts folder and launch the dashboard:
 
 ```Bash
 cd ../scripts
-pip install -r requirements.txt  # Ensure streamlit, pandas, plotly are installed
+pip install -r requirements.txt  
 streamlit run app.py
 ```
 
