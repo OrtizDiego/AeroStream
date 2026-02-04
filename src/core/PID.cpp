@@ -14,9 +14,9 @@ double PID::calculate(double setpoint, double pv) {
     // 2. Proportional Term
     double P = _kp * error;
 
-    // 3. Integral Term (Accumulate error over time)
-    _integral += error * _dt;
-    double I = _ki * _integral;
+    // 3. Integral Term (Tentative)
+    double tentative_integral = _integral + error * _dt;
+    double I = _ki * tentative_integral;
 
     // 4. Derivative Term (Rate of change of error)
     double derivative = (error - _pre_error) / _dt;
@@ -26,9 +26,20 @@ double PID::calculate(double setpoint, double pv) {
     double output = P + I + D;
 
     // 6. Clamp output to hardware limits (Safety!)
+    double raw_output = output;
     output = std::clamp(output, _min_output, _max_output);
 
-    // 7. Save error for next loop
+    // 7. Anti-Windup (Clamping)
+    bool saturated = (output != raw_output);
+    bool same_sign = false;
+    if (output >= _max_output && error > 0) same_sign = true;
+    else if (output <= _min_output && error < 0) same_sign = true;
+
+    if (!saturated || !same_sign) {
+        _integral = tentative_integral;
+    }
+
+    // 8. Save error for next loop
     _pre_error = error;
 
     return output;
