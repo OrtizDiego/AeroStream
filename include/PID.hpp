@@ -6,7 +6,8 @@ public:
     PID(double kp, double ki, double kd, double dt, double max_output, double min_output);
 
     // The main function that computes the control signal
-    double calculate(double setpoint, double pv);
+    // Optional: feedforward term (e.g., gravity compensation)
+    double calculate(double setpoint, double pv, double feedforward = 0.0);
 
     // Resets the integral error (useful when turning the system off/on)
     void reset();

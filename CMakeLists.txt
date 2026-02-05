@@ -18,7 +18,7 @@ FetchContent_MakeAvailable(googletest)
 include_directories(include)
 
 # Create a library for your logic so both Main and Tests can use it
-add_library(ControlLogic src/core/PID.cpp src/simulation/MockSensor.cpp)
+add_library(ControlLogic src/core/PID.cpp src/simulation/MockSensor.cpp src/simulation/PhysicsEngine.cpp)
 
 # Main Executable
 add_executable(flight_controller src/main.cpp)
@@ -26,7 +26,7 @@ target_link_libraries(flight_controller PRIVATE ControlLogic)
 
 # Test Executable
 enable_testing()
-add_executable(unit_tests tests/test_pid.cpp)
+add_executable(unit_tests tests/test_pid.cpp tests/test_physics.cpp tests/test_feedforward.cpp)
 target_link_libraries(unit_tests PRIVATE ControlLogic GTest::gtest_main)
 
 include(GoogleTest)
