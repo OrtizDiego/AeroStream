@@ -15,6 +15,14 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 # ------------------------
 
+# --- Pybind11 Setup ---
+FetchContent_Declare(
+  pybind11
+  URL https://github.com/pybind/pybind11/archive/refs/tags/v2.10.3.zip
+)
+FetchContent_MakeAvailable(pybind11)
+# ----------------------
+
 include_directories(include)
 
 # Create a library for your logic so both Main and Tests can use it
@@ -23,6 +31,10 @@ add_library(ControlLogic src/core/PID.cpp src/simulation/MockSensor.cpp src/simu
 # Main Executable
 add_executable(flight_controller src/main.cpp)
 target_link_libraries(flight_controller PRIVATE ControlLogic)
+
+# Pybind11 Module
+pybind11_add_module(aerostream_core src/bindings.cpp)
+target_link_libraries(aerostream_core PRIVATE ControlLogic)
 
 # Test Executable
 enable_testing()

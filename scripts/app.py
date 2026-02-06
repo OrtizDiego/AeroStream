@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
-import subprocess
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
 import numpy as np
-import subprocess
 import sys
 
 # --- 1. ROBUST PATH CONFIGURATION ---
@@ -13,24 +11,16 @@ import sys
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__)) 
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPTS_DIR, ".."))
 BUILD_DIR = os.path.join(ROOT_DIR, "build")
-EXE_PATH = os.path.join(BUILD_DIR, "flight_controller")
-CSV_PATH = os.path.join(BUILD_DIR, "telemetry.csv")
 
-# --- 2. AUTO-COMPILE C++ (CLOUD SUPPORT) ---
-def ensure_cpp_executable():
-    if not os.path.exists(EXE_PATH):
-        print("⚠️ C++ Binary not found. Compiling...")
-        os.makedirs(BUILD_DIR, exist_ok=True)
-        try:
-            # Configure and Build
-            subprocess.run(["cmake", ".."], cwd=BUILD_DIR, check=True)
-            subprocess.run(["cmake", "--build", "."], cwd=BUILD_DIR, check=True)
-            print("✅ Compilation Successful!")
-        except Exception as e:
-            st.error(f"❌ Compilation Failed: {e}")
+# Add build directory to python path to find the module
+if BUILD_DIR not in sys.path:
+    sys.path.append(BUILD_DIR)
 
-# Run compilation check on startup
-ensure_cpp_executable()
+try:
+    import aerostream_core
+except ImportError:
+    st.error(f"❌ Could not import 'aerostream_core'. Ensure the C++ module is compiled and in {BUILD_DIR}")
+    st.stop()
 
 # 1. PAGE CONFIG
 st.set_page_config(page_title="AeroStream GCS", layout="wide", page_icon="🚁")
@@ -82,17 +72,18 @@ def calculate_metrics(df, switch_step, mode_type, tolerance_percent=0.02):
 # --- HELPER: Run Simulation ---
 def run_simulation_headless(kp, ki, kd, steps, t1, t2, switch, mission_mode, opt_strategy):    
     try:
-        # Use the absolute EXE_PATH we defined at the top
-        subprocess.run(
-            [EXE_PATH, str(kp), str(ki), str(kd), str(steps), str(t1), str(t2), str(switch)], 
-            cwd=BUILD_DIR, check=True, stdout=subprocess.DEVNULL
-        )
+        # Call C++ function directly
+        # Defaults: feedforward=9.81
+        data_map = aerostream_core.run_simulation(kp, ki, kd, steps, t1, t2, switch, 9.81)
+
+        # Convert map of lists to DataFrame
+        df = pd.DataFrame(data_map)
+        # Rename columns to match existing logic (C++ map keys are lowercase)
+        df.rename(columns={"time": "Time", "target": "Target", "actual": "Actual", "output": "Output"}, inplace=True)
+
     except Exception as e:
         return float('inf')
 
-    if not os.path.exists(CSV_PATH): return float('inf')
-    
-    df = pd.read_csv(CSV_PATH)
     rmse, _, settling_time = calculate_metrics(df, switch, mission_mode)
     
     if opt_strategy == "accuracy":
@@ -253,19 +244,19 @@ if not submitted:
 # 3. MAIN LOGIC
 if submitted:    
     try:
-        subprocess.run(
-            [EXE_PATH, str(kp), str(ki), str(kd), str(steps), str(t1_val), str(t2_val), str(switch_val)], 
-            cwd=BUILD_DIR, check=True
+        # Call C++ Directly
+        data_map = aerostream_core.run_simulation(
+            kp, ki, kd,
+            steps,
+            t1_val, t2_val, switch_val,
+            9.81 # Feedforward
         )
+        df = pd.DataFrame(data_map)
+        df.rename(columns={"time": "Time", "target": "Target", "actual": "Actual", "output": "Output"}, inplace=True)
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error calling C++ module: {e}")
         st.stop()
 
-    if not os.path.exists(CSV_PATH):
-        st.error("Telemetry file missing.")
-        st.stop()
-        
-    df = pd.read_csv(CSV_PATH)
     rmse, overshoot, settling_time = calculate_metrics(df, switch_val, mission_mode)
 
     col1, col2, col3 = st.columns(3)
