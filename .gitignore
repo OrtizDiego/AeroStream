@@ -3,7 +3,7 @@
 *.o
 *.obj
 *.exe
-build/
+build*/
 __pycache__/
 *.pyc
 .vscode/

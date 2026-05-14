@@ -1,27 +1,23 @@
 #pragma once
+#include "IController.hpp"
 
-class PID {
+namespace aerostream {
+
+class PID : public IController {
 public:
-    // Constructor: Takes the 3 controller gains and a limit for the output
-    PID(double kp, double ki, double kd, double dt, double max_output, double min_output);
+    PID(double kp, double ki, double kd, double dt,
+        double max_output, double min_output, double N = 10.0);
 
-    // The main function that computes the control signal
-    double calculate(double setpoint, double pv);
-
-    // Resets the integral error (useful when turning the system off/on)
-    void reset();
-
-    // Destructor
-    ~PID();
+    double calculate(double setpoint, double pv) override;
+    void reset() override;
 
 private:
-    double _kp;
-    double _ki;
-    double _kd;
-    double _dt;          // Time step (loop interval)
-    double _max_output;  // Saturation limits (Motor limits)
-    double _min_output;
-
-    double _pre_error;   // Previous error for Derivative term
-    double _integral;    // Accumulated error for Integral term
+    double _kp, _ki, _kd, _dt;
+    double _max_output, _min_output;
+    double _N;
+    double _pre_error;
+    double _integral;
+    double _d_filtered;
 };
+
+} // namespace aerostream

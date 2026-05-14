@@ -1,22 +1,34 @@
 #include "MockSensor.hpp"
 #include <iostream>
-#include <cstdlib> // For rand()
 
-MockSensor::MockSensor(double initial_value) : _value(initial_value) {}
+namespace aerostream {
+
+MockSensor::MockSensor(double initial_value, double sigma)
+    : _value(initial_value),
+      _sigma(sigma),
+      _rng(std::random_device{}()),
+      _dist(0.0, sigma)
+{
+}
 
 void MockSensor::init()
 {
-    std::cout << "[MockSensor] Initialized and calibrated." << std::endl;
+    std::cout << "[MockSensor] Initialized. sigma=" << _sigma << " m\n";
 }
 
 double MockSensor::readValue()
 {
-    // Simulate sensor noise: +/- 0.5 meters random fluctuation
-    double noise = ((std::rand() % 100) / 100.0) - 0.5;
-    return _value + noise;
+    return _value + _dist(_rng);
+}
+
+void MockSensor::setValue(double v)
+{
+    _value = v;
 }
 
 void MockSensor::update(double step_value)
 {
     _value += step_value;
 }
+
+} // namespace aerostream

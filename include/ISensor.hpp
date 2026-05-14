@@ -1,11 +1,12 @@
 #pragma once
 
-// Abstract Base Class
+namespace aerostream {
+
 class ISensor {
 public:
-    virtual ~ISensor() {}
-
-    // Pure virtual function: any sensor MUST implement this
+    virtual ~ISensor() = default;
     virtual void init() = 0;
     virtual double readValue() = 0;
 };
+
+} // namespace aerostream
