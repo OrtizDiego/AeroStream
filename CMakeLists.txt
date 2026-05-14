@@ -45,7 +45,7 @@ target_link_libraries(unit_tests PRIVATE ControlLogic GTest::gtest_main)
 
 # --- AddressSanitizer + UBSan for Debug builds ---
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  foreach(tgt ControlLogic unit_tests)
+  foreach(tgt ControlLogic flight_controller unit_tests)
     target_compile_options(${tgt} PRIVATE
       -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(${tgt} PRIVATE
