@@ -16,13 +16,13 @@ A simulation platform for comparing and benchmarking control strategies on a 1D 
 
 ```mermaid
 graph LR
-    A[Streamlit GCS] -- "Kp, Ki, Kd, σ, Mission" --> B(C++ Simulation)
-    B --> C[PhysicsEngine\n1D Newtonian dynamics]
-    C -- "true altitude" --> D[MockSensor\nGaussian noise N(0, σ)]
-    D -- "measured altitude" --> E[PID Controller\nimplements IController]
+    A[Streamlit GCS] -- "Kp, Ki, Kd, sigma, Mission" --> B[C++ Simulation]
+    B --> C[PhysicsEngine]
+    C -- "true altitude" --> D[MockSensor - Gaussian noise]
+    D -- "measured altitude" --> E[PID Controller]
     E -- "motor force" --> C
     B -- "telemetry.csv" --> A
-    A -- "charts + metrics" --> User
+    A -- "charts and metrics" --> User
 ```
 
 ### Physics Model
