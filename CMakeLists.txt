@@ -4,30 +4,54 @@ project(AeroStream VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# --- GoogleTest Setup ---
+# Export compile commands so clang-tidy (and IDEs) can find them
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# --- clang-tidy (enabled when tool is present; CI installs it explicitly) ---
+find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+if(CLANG_TIDY_EXE)
+  set(CMAKE_CXX_CLANG_TIDY
+    "${CLANG_TIDY_EXE};-checks=-*,modernize-use-override,modernize-use-nullptr,modernize-use-default-member-init,readability-braces-around-statements")
+endif()
+
+# --- GoogleTest (pinned to v1.15.2) ---
 include(FetchContent)
 FetchContent_Declare(
   googletest
-  URL https://github.com/google/googletest/archive/refs/heads/main.zip
+  URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
 )
-# For Windows: prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
-# ------------------------
 
 include_directories(include)
 
-# Create a library for your logic so both Main and Tests can use it
-add_library(ControlLogic src/core/PID.cpp src/simulation/MockSensor.cpp src/simulation/PhysicsEngine.cpp)
+# Shared logic library (used by both flight_controller and unit_tests)
+add_library(ControlLogic
+  src/core/PID.cpp
+  src/simulation/MockSensor.cpp
+  src/simulation/PhysicsEngine.cpp
+)
 
-# Main Executable
 add_executable(flight_controller src/main.cpp)
 target_link_libraries(flight_controller PRIVATE ControlLogic)
 
-# Test Executable
 enable_testing()
-add_executable(unit_tests tests/test_pid.cpp tests/test_physics.cpp)
+add_executable(unit_tests
+  tests/test_pid.cpp
+  tests/test_physics.cpp
+  tests/test_sensor.cpp
+)
 target_link_libraries(unit_tests PRIVATE ControlLogic GTest::gtest_main)
+
+# --- AddressSanitizer + UBSan for Debug builds ---
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  foreach(tgt ControlLogic unit_tests)
+    target_compile_options(${tgt} PRIVATE
+      -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${tgt} PRIVATE
+      -fsanitize=address,undefined)
+  endforeach()
+endif()
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)

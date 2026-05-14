@@ -1,19 +1,46 @@
-name: C++ CI (Build & Test)
+name: C++ CI (Build, Lint & Test)
 
 on: [push, pull_request]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
 
-    - name: Configure CMake
-      run: cmake -S . -B build
+    - name: Configure CMake (Release)
+      run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
       run: cmake --build build
 
     - name: Run Unit Tests
       run: cd build && ctest --output-on-failure
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install clang-tidy
+      run: sudo apt-get update && sudo apt-get install -y clang-tidy
+
+    - name: Configure CMake (generate compile_commands.json)
+      run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+    - name: Build with clang-tidy
+      run: cmake --build build
+
+  sanitizer-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure CMake (Debug + ASan/UBSan)
+      run: cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug
+
+    - name: Build
+      run: cmake --build build-san
+
+    - name: Run unit tests under sanitizers
+      run: cd build-san && ASAN_OPTIONS=detect_leaks=1 ctest --output-on-failure

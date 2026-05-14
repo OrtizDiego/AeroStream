@@ -1,61 +1,51 @@
 #include <gtest/gtest.h>
 #include "PhysicsEngine.hpp"
 
-// Test 1: Does it fall due to gravity when force is 0?
+using namespace aerostream;
+
 TEST(PhysicsEngineTest, GravityWorks)
 {
     PhysicsEngine physics(1.0, 0.0, 0.1); // No drag
-    // Initial v=0, pos=0.
-    // Force = 0.
-    // F_net = -mg = -9.81
-    // a = -9.81
-    // dt = 1.0
-    // v_new = 0 + (-9.81) * 1 = -9.81
-    // pos_new = 0 + (-9.81) * 1 = -9.81 (Should be clamped to 0 by ground collision?)
+    physics.setState(50.0, 0.0);          // Start airborne, zero velocity
 
-    // NOTE: Our implementation updates velocity THEN position.
-    // And it has ground collision check.
-    // Let's set initial position high so it can fall.
-    // But we don't have a setter for position.
-    // We can simulate it falling from 0?
-    // Implementation: if (_position < 0.0) _position = 0.0;
+    const double dt = 0.1;
+    physics.update(0.0, dt);  // Zero force — only gravity acts
 
-    // So if we start at 0 and gravity pulls down, it stays at 0.
-    // We need to allow it to lift off first or test the force calculation implicitly.
-
-    // Let's apply a force > gravity to lift it, then stop force and see if it slows down.
-
-    double dt = 0.1;
-    // Lift off: Force = 20N. (Gravity is ~9.8N). Net ~ 10.2N. a ~ 10.2 m/s^2.
-    physics.update(20.0, dt);
-
-    EXPECT_GT(physics.getPosition(), 0.0);
-    EXPECT_GT(physics.getVelocity(), 0.0);
-
-    double v_after_lift = physics.getVelocity();
-
-    // Now apply 0 force. Gravity should reduce velocity.
-    physics.update(0.0, dt);
-
-    EXPECT_LT(physics.getVelocity(), v_after_lift);
+    // a = -9.81 m/s², v = 0 + (-9.81)*0.1 = -0.981 m/s
+    EXPECT_NEAR(physics.getVelocity(), -0.981, 0.001);
+    // pos = 50.0 + (-0.981)*0.1 = 49.9019 m
+    EXPECT_NEAR(physics.getPosition(), 49.9019, 0.001);
 }
 
-// Test 2: Hover check
 TEST(PhysicsEngineTest, HoverCheck)
 {
-    // Mass 1.0 -> Gravity force 9.81 N.
-    // To hover (v=constant), we need Force = 9.81 N (ignoring drag if v=0).
+    // Mass=1 kg, no drag. Gravity force = 9.81 N downward.
+    // Applying F=9.81 N upward should yield zero net acceleration.
     PhysicsEngine physics(1.0, 0.0, 0.1);
+    physics.setState(50.0, 0.0);
 
-    // Get it off the ground first
-    physics.update(20.0, 0.1);
-    physics.update(20.0, 0.1);
+    double v_start = physics.getVelocity(); // 0.0
 
-    double v_start = physics.getVelocity();
+    physics.update(9.81, 0.1); // Exact gravity compensation
 
-    // Apply exact gravity compensation
-    physics.update(9.81, 0.1);
-
-    // Velocity should be roughly unchanged (acceleration ~ 0)
     EXPECT_NEAR(physics.getVelocity(), v_start, 0.001);
+}
+
+TEST(PhysicsEngineTest, SetStateRoundTrip)
+{
+    PhysicsEngine physics;
+    physics.setState(123.4, -5.6);
+    EXPECT_NEAR(physics.getPosition(), 123.4, 1e-9);
+    EXPECT_NEAR(physics.getVelocity(), -5.6, 1e-9);
+}
+
+TEST(PhysicsEngineTest, GroundCollisionClampsToZero)
+{
+    PhysicsEngine physics(1.0, 0.0, 0.1);
+    physics.setState(0.05, -5.0); // Very close to ground, moving downward
+
+    physics.update(0.0, 0.1);    // Gravity + downward velocity → hits ground
+
+    EXPECT_GE(physics.getPosition(), 0.0);
+    EXPECT_GE(physics.getVelocity(), 0.0);
 }
