@@ -14,7 +14,8 @@ def plot_telemetry():
     # Plot Target vs Actual Altitude
     plt.subplot(2, 1, 1)
     plt.plot(df['Time'], df['Target'], 'r--', label='Target Altitude')
-    plt.plot(df['Time'], df['Actual'], 'b-', label='Actual Altitude (Sensor)')
+    plt.plot(df['Time'], df['Measured'], color='gray', alpha=0.4, label='Sensor Reading')
+    plt.plot(df['Time'], df['Actual'], 'b-', label='True Altitude')
     plt.title('Flight Telemetry: Altitude Control')
     plt.ylabel('Meters')
     plt.legend()

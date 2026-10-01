@@ -13,7 +13,7 @@ AeroStream is a 1D flight control learning platform combining a C++17 physics/co
 mkdir -p build && cd build && cmake .. && cmake --build .
 ```
 
-**Run unit tests (13 tests across 3 suites):**
+**Run unit tests (21 tests across 4 suites):**
 ```bash
 cd build && ./unit_tests
 ```
@@ -33,10 +33,11 @@ cd scripts && pip install -r requirements.txt && streamlit run app.py
 ./run_all.sh
 ```
 
-**Run simulation manually (8 args, noise_sigma optional — defaults to 0.5):**
+**Run simulation manually (7 required args + 5 optional):**
 ```bash
-cd build && ./flight_controller <Kp> <Ki> <Kd> <steps> <target1> <target2> <switch_step> [noise_sigma]
-# Example: ./flight_controller 0.6 0.01 0.05 1000 50.0 100.0 500 0.5
+cd build && ./flight_controller <Kp> <Ki> <Kd> <steps> <target1> <target2> <switch_step> \
+    [noise_sigma=0.5] [filter_N=5] [seed=-1] [hover_ff=1] [i_zone=5]
+# Example: ./flight_controller 3.0 0.2 2.0 1000 50.0 100.0 500 0.5
 ```
 
 **Debug build with AddressSanitizer + UBSan:**
@@ -53,10 +54,10 @@ All C++ classes live in `namespace aerostream`.
 
 - **`include/IController.hpp`** — Abstract controller interface (`calculate`, `reset`). The extension point for adding new control strategies. `PID` inherits from it.
 - **`include/ISensor.hpp`** — Abstract sensor interface (`init`, `readValue`). `MockSensor` inherits from it.
-- **`src/main.cpp`** — Simulation entry point; accepts up to 8 CLI args (7th: switch_step, 8th: noise_sigma). Runs a 10 Hz physics loop (dt = 0.1 s), outputs `build/telemetry.csv` with columns: `Time, Target, Actual, Velocity, Output`.
-- **`src/core/PID.cpp`** — PID controller; output clamped to [0.0, 50.0]; anti-windup via conditional integration; first-order derivative filter with coefficient N (default 10.0). Constructor: `PID(kp, ki, kd, dt, max_out, min_out, N=10.0)`.
+- **`src/main.cpp`** — Simulation entry point (args above; seed < 0 = non-deterministic). Runs a 10 Hz physics loop (dt = 0.1 s). Motor thrust = hover feed-forward (m·g, unless `hover_ff=0`) + PID output; PID limits are shifted so total thrust stays in [0, 50] N. Outputs `build/telemetry.csv` with columns: `Time, Target, Actual, Measured, Velocity, Output` (`Actual` = true altitude, `Measured` = noisy sensor reading).
+- **`src/core/PID.cpp`** — PID controller; derivative on measurement (no setpoint kick, no first-sample kick) through a first-order low-pass filter with bandwidth N; anti-windup by clamping (no integration while saturated) plus an optional integral zone (integrate only while |error| < i_zone). Constructor: `PID(kp, ki, kd, dt, max_out, min_out, N=10.0, i_zone=0.0)`.
 - **`src/simulation/PhysicsEngine.cpp`** — 1D Newtonian dynamics: gravity (−9.81 m/s²), quadratic drag, ground collision clamp. `setState(position, velocity)` allows direct state initialization (used in tests).
-- **`src/simulation/MockSensor.cpp`** — Implements `ISensor`. Gaussian noise via `std::normal_distribution<double>(0, σ)` seeded from `std::random_device`. Use `setValue(v)` to sync to true physics position, then `readValue()` for the noisy measurement.
+- **`src/simulation/MockSensor.cpp`** — Implements `ISensor`. Gaussian noise via `std::normal_distribution<double>(0, σ)` seeded from `std::random_device`, or from an explicit seed via `MockSensor(initial, sigma, seed)`. σ <= 0 = ideal sensor. Use `setValue(v)` to sync to true physics position, then `readValue()` for the noisy measurement.
 
 Build system is CMake 3.10+, C++17, GoogleTest v1.15.2 (pinned). clang-tidy runs during compilation with modernize/readability checks. Debug builds enable ASan + UBSan.
 
@@ -64,15 +65,15 @@ Build system is CMake 3.10+, C++17, GoogleTest v1.15.2 (pinned). clang-tidy runs
 
 - **Path resolution**: `BUILD_DIR = ROOT_DIR/build`, `EXE_PATH = BUILD_DIR/flight_controller`, `CSV_PATH = BUILD_DIR/telemetry.csv`
 - **Two tabs**: "Mission Simulation" (existing flight sim + Twiddle optimizer) and "Noise Analysis" (σ sweep)
-- **Simulation flow**: UI parameters → subprocess call to C++ binary (8 args) → read CSV → compute metrics → render Plotly chart
-- **Metrics**: Settling time (±2% band), overshoot %, RMSE computed in Python from CSV
-- **Noise Analysis tab**: runs 5 simulations at σ = [0.01, 0.1, 0.5, 1.0, 2.0] m, plots RMSE bar chart + overlaid time-series
-- **AI Auto-Tuner**: Coordinate Descent (Twiddle); up to 30 iterations, converges when `sum(dp) < 0.005`; always runs at σ = 0.5 m
+- **Simulation flow**: UI parameters → `run_sim()` subprocess call to the C++ binary (12 args) → read CSV → compute metrics → render Plotly charts
+- **Metrics** (all on the TRUE altitude `Actual`): settling time (±2% of step size), overshoot (% of step size), RMSE; `noise_metrics()` adds hold-phase RMS error and thrust chatter (std of Δthrust) over the final 40% of the run
+- **Noise Analysis tab**: uses the sidebar gains/mission; Monte Carlo sweep over σ levels × seeds × up to 3 derivative-filter N values (common seeds), plots mean ± std of hold error, chatter and settling time, plus a single-flight detail view
+- **AI Auto-Tuner**: Coordinate Descent (Twiddle) from the current gains; up to 40 rounds, converges when `sum(dp) < 0.01`; uses the sidebar σ/N/feed-forward/i_zone with a fixed seed
 
 ### CI/CD
 
 GitHub Actions (`.github/workflows/cpp-build.yml`) runs three jobs on push/PR:
-1. `build-and-test` — Release build + 13 unit tests via ctest
+1. `build-and-test` — Release build + 21 unit tests via ctest
 2. `lint` — installs clang-tidy, builds with `CMAKE_EXPORT_COMPILE_COMMANDS=ON`
 3. `sanitizer-tests` — Debug build + unit tests under `ASAN_OPTIONS=detect_leaks=1`
 
@@ -81,5 +82,6 @@ GitHub Actions (`.github/workflows/cpp-build.yml`) runs three jobs on push/PR:
 - The C++ binary and Python dashboard share state only through `build/telemetry.csv`.
 - `dt = 0.1 s` (10 Hz) is hardcoded in both the physics simulation and the Streamlit metrics calculations; changing it requires updating both.
 - Default physics: `mass = 1 kg`, `drag_coeff = 0.5`, `cross_sectional_area = 0.1 m²`.
-- PID `min_output = 0.0`: the drone cannot apply negative thrust (can only coast downward, not actively descend).
+- Total thrust is clamped to [0, 50] N: the drone cannot apply negative thrust (can only coast downward, not actively descend).
+- Default gains (Kp=3.0, Ki=0.2, Kd=2.0, N=5, i_zone=5) are set in both `src/main.cpp` and `DEFAULTS` in `scripts/app.py`. `tests/test_closed_loop.cpp` checks that they actually settle.
 - The `IController` interface (`include/IController.hpp`) is the extension point for new controllers; the `ISensor` interface (`include/ISensor.hpp`) is the extension point for new sensor types.

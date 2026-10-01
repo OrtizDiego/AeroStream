@@ -40,6 +40,7 @@ add_executable(unit_tests
   tests/test_pid.cpp
   tests/test_physics.cpp
   tests/test_sensor.cpp
+  tests/test_closed_loop.cpp
 )
 target_link_libraries(unit_tests PRIVATE ControlLogic GTest::gtest_main)
 
