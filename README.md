@@ -16,7 +16,7 @@ A simulation platform for comparing and benchmarking control strategies on a 1D 
 
 ```mermaid
 graph LR
-    A[Streamlit GCS] -- "Kp, Ki, Kd, sigma, Mission" --> B[C++ Simulation]
+    A[Streamlit GCS] -- "Kp, Ki, Kd, N, sigma, Mission" --> B[C++ Simulation]
     B --> C[PhysicsEngine]
     C -- "true altitude" --> D[MockSensor - Gaussian noise]
     D -- "measured altitude" --> E[PID Controller]
@@ -34,10 +34,11 @@ graph LR
 
 ### Sensor Model
 
-`MockSensor` samples additive Gaussian noise from `std::normal_distribution<double>(0, σ)`,
-seeded per-instance via `std::random_device`. σ defaults to 0.5 m and is configurable as
-the 8th CLI argument. The sensor is properly wired into the control loop — measured altitude
-diverges from true altitude proportionally to σ.
+`MockSensor` samples additive Gaussian noise from `std::normal_distribution<double>(0, σ)`.
+It is seeded via `std::random_device` by default, or with a fixed seed for reproducible runs
+(10th CLI argument). σ defaults to 0.5 m (8th CLI argument); σ = 0 is an ideal sensor.
+The controller only sees the measured altitude. The telemetry logs both the true altitude
+(`Actual`) and the sensor reading (`Measured`), and all metrics are computed on the true altitude.
 
 ### IController Interface
 
@@ -58,9 +59,20 @@ Any new controller (LQR gain matrix, MPC solver, bang-bang) implements this inte
 
 ### PID Controller Details
 
-- Three-term PID with **conditional integration anti-windup** (integral freezes when output saturates in the direction of error)
-- **First-order low-pass filtered derivative:** `α = N·dt / (1 + N·dt)`, default N = 10 — prevents derivative kick on step inputs and attenuates high-frequency sensor noise
-- Output clamped to [0, 50] N (drone cannot actively pull downward)
+- **Hover thrust feed-forward:** `thrust = m·g + PID(...)`, so the PID only corrects deviations
+  from hover. Without it a P-D controller hovers `9.81 / Kp` metres below the target and the
+  I term has to carry the entire weight of the drone (can be disabled to demonstrate this).
+- **Derivative on measurement** (`-d(pv)/dt`) rather than on error, so setpoint steps cause no derivative kick
+- **First-order low-pass filtered derivative:** `α = N·dt / (1 + N·dt)`, default N = 5 rad/s. Lower N filters more noise but adds lag.
+- **Anti-windup:** the integral is frozen while the output is saturated, and (optionally) while
+  `|error|` is outside an *integral zone* (default 5 m). Without the zone, error accumulated during
+  a long climb has to be unwound afterwards as overshoot plus a slow creep back to the setpoint.
+- Total thrust clamped to [0, 50] N (drone cannot actively pull downward)
+- **Default gains:** Kp = 3.0, Ki = 0.2, Kd = 2.0. A 0 → 100 m takeoff settles within ±2% in about 4 s with under 1% overshoot.
+
+> **Tuning hint:** the plant is (nearly) a double integrator, so a P-only controller oscillates
+> forever, and damping comes from the D term. A well-damped response needs roughly
+> `Kd ≈ 1–2 × √Kp`.
 
 ---
 
@@ -91,12 +103,17 @@ streamlit run app.py
 
 ```bash
 cd build
-./flight_controller <Kp> <Ki> <Kd> <steps> <target1> <target2> <switch_step> <noise_sigma>
+./flight_controller <Kp> <Ki> <Kd> <steps> <target1> <target2> <switch_step> \
+                    [noise_sigma=0.5] [filter_N=5] [seed=-1] [hover_ff=1] [i_zone=5]
 # Example:
-./flight_controller 0.6 0.01 0.05 1000 50.0 100.0 500 0.5
+./flight_controller 3.0 0.2 2.0 1000 50.0 100.0 500 0.5
 ```
 
-`noise_sigma` is optional and defaults to 0.5 m.
+- `seed < 0` uses a non-deterministic seed; `seed >= 0` gives a reproducible noise sequence
+- `hover_ff = 0` disables the gravity feed-forward
+- `i_zone = 0` integrates at all error magnitudes
+
+Output: `telemetry.csv` with columns `Time, Target, Actual (true altitude), Measured (sensor), Velocity, Output (thrust)`.
 
 ---
 
@@ -108,29 +125,34 @@ Two flight profiles:
 - **Standard Takeoff** — ascent from 0 m to a target altitude
 - **Step Response** — mid-flight altitude jump (e.g., 50 m → 100 m) to characterise rise time and agility
 
-Metrics computed automatically: settling time (±2% band), overshoot %, RMSE.
-Animated Plotly replay with DVR-style playback and CSV export.
+Metrics are computed on the **true** altitude: settling time (±2% of the step), overshoot
+(% of the step), RMSE, and thrust chatter (the noise passed on to the motors).
+Animated Plotly replay with DVR-style playback, a motor-thrust chart, and CSV export.
 
 ### Noise Sensitivity Analysis
 
-The **Noise Analysis** tab runs the simulation at five σ levels:
-`[0.01, 0.1, 0.5, 1.0, 2.0] m`
+The **Noise Analysis** tab flies the current mission and gains at several noise levels σ
+(default `0, 0.1, 0.25, 0.5, 1, 2 m`), several times per level with different seeds, and
+compares up to three derivative-filter settings N side by side. Seeds are shared across
+settings, so differences come from the settings rather than from luck.
 
-For each level it collects RMSE and plots:
-1. A bar chart of RMSE vs σ — shows the degradation curve
-2. Overlaid altitude time-series — shows how response roughness grows with noise
+For each (N, σ) it reports mean ± std of:
+1. **Altitude-hold error**: RMS of the true altitude error over the final 40% of the flight
+2. **Thrust chatter**: std of the step-to-step thrust change over the same window
+3. **Settling time** (and how many runs settled at all)
 
-This makes it straightforward to understand the trade-off between Kd (responsiveness) and
-noise amplification, and to characterize how robust a set of gains is to sensor quality.
+A detail view shows true altitude, sensor reading and thrust for any single (σ, N) flight.
+This makes the noise/lag trade-off of the D-term filter (and of Kd) directly visible.
 
 ### AI Auto-Tuner
 
-Coordinate Descent (Twiddle) optimizes Kp, Ki, Kd automatically.
-- **Accuracy mode:** minimizes RMSE
-- **Balanced mode:** minimizes `RMSE + 0.5 · settling_time`
+Coordinate Descent (Twiddle) optimizes Kp, Ki, Kd automatically, starting from the current gains.
+- **Accuracy mode:** minimizes RMSE (true altitude)
+- **Balanced mode:** minimizes `RMSE + 0.5 · settling_time + 0.2 · thrust_chatter`
 
-Convergence criterion: `sum(dp) < 0.005`, maximum 30 iterations.
-The optimizer always runs at σ = 0.5 m so gains are tuned for realistic noise conditions.
+It uses the sidebar's noise σ, filter N, feed-forward and integral-zone settings, with a
+fixed noise seed so every evaluation sees the same noise. Convergence criterion:
+`sum(dp) < 0.01`, maximum 40 rounds.
 
 ---
 
@@ -144,15 +166,16 @@ The optimizer always runs at σ = 0.5 m so gains are tuned for realistic noise c
 │   ├── PhysicsEngine.hpp
 │   └── MockSensor.hpp
 ├── src/
-│   ├── main.cpp            # Simulation entry point (8 CLI args)
+│   ├── main.cpp            # Simulation entry point (7 required + 5 optional CLI args)
 │   ├── core/PID.cpp
 │   └── simulation/
 │       ├── PhysicsEngine.cpp
 │       └── MockSensor.cpp
 ├── tests/
-│   ├── test_pid.cpp        # 4 PID tests
+│   ├── test_pid.cpp        # 9 PID tests (incl. derivative kick, integral zone, reset)
 │   ├── test_physics.cpp    # 4 physics tests (use setState for clean setup)
-│   └── test_sensor.cpp     # 5 MockSensor tests (noise distribution, setValue)
+│   ├── test_sensor.cpp     # 6 MockSensor tests (noise distribution, setValue, seeding)
+│   └── test_closed_loop.cpp # 2 closed-loop tests (PID + physics actually converge)
 ├── scripts/
 │   └── app.py              # Streamlit GCS (Mission Simulation + Noise Analysis tabs)
 ├── .github/workflows/
@@ -168,7 +191,7 @@ Three jobs run on every push and pull request:
 
 | Job | What it checks |
 |---|---|
-| `build-and-test` | CMake Release build + all 13 unit tests |
+| `build-and-test` | CMake Release build + all 21 unit tests |
 | `lint` | clang-tidy (modernize, readability checks) during compilation |
 | `sanitizer-tests` | Debug build with AddressSanitizer + UBSan; runs tests under `ASAN_OPTIONS=detect_leaks=1` |
 

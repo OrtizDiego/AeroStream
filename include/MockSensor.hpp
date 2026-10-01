@@ -7,6 +7,8 @@ namespace aerostream {
 class MockSensor : public ISensor {
 public:
     explicit MockSensor(double initial_value, double sigma = 0.5);
+    // Deterministic noise sequence (reproducible runs / fair comparisons).
+    MockSensor(double initial_value, double sigma, unsigned int seed);
     void init() override;
     double readValue() override;
     void setValue(double v);

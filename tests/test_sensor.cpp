@@ -56,3 +56,12 @@ TEST(MockSensorTest, DifferentSeedsProduceDifferentSequences)
     }
     EXPECT_FALSE(all_identical);
 }
+
+TEST(MockSensorTest, SameSeedIsReproducible)
+{
+    MockSensor s1(0.0, 1.0, 42U);
+    MockSensor s2(0.0, 1.0, 42U);
+    for (int i = 0; i < 20; ++i) {
+        EXPECT_DOUBLE_EQ(s1.readValue(), s2.readValue());
+    }
+}
